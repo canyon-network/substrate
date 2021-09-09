@@ -30,7 +30,7 @@
 
 use crate::{
 	protocol::message::{self, BlockAnnounce, BlockAttributes, BlockRequest, BlockResponse},
-	schema::v1::{StateRequest, StateResponse},
+	schema::v1::{StateRequest, StateResponse, DataResponse, DataRequest},
 };
 use blocks::BlockCollection;
 use codec::Encode;
@@ -55,6 +55,7 @@ use sp_runtime::{
 	EncodedJustification, Justifications,
 };
 use state::StateSync;
+use data::DataSync;
 use std::{
 	collections::{hash_map::Entry, HashMap, HashSet},
 	fmt,
@@ -67,6 +68,7 @@ use warp::{WarpProofRequest, WarpSync, WarpSyncProvider};
 mod blocks;
 mod extra_requests;
 mod state;
+mod data;
 mod warp;
 
 /// Maximum blocks to request in a single packet.
@@ -222,6 +224,8 @@ pub struct ChainSync<B: BlockT> {
 	block_announce_validation_per_peer_stats: HashMap<PeerId, usize>,
 	/// State sync in progress, if any.
 	state_sync: Option<StateSync<B>>,
+	/// Data sync in progress, if any.
+	data_sync: Option<DataSync<B>>,
 	/// Warp sync in progress, if any.
 	warp_sync: Option<WarpSync<B>>,
 	/// Warp sync provider.
@@ -419,6 +423,15 @@ pub enum OnStateData<B: BlockT> {
 	Request(PeerId, StateRequest),
 }
 
+/// Result of [`ChainSync::on_state_data`].
+#[derive(Debug)]
+pub enum OnTransactionData<B: BlockT> {
+	/// The block and state that should be imported.
+	Import(BlockOrigin, IncomingBlock<B>),
+	/// A new state request needs to be made to the given peer.
+	Request(PeerId, DataRequest),
+}
+
 /// Result of [`ChainSync::on_warp_sync_data`].
 #[derive(Debug)]
 pub enum OnWarpSyncData<B: BlockT> {
@@ -556,6 +569,7 @@ impl<B: BlockT> ChainSync<B> {
 			block_announce_validation_per_peer_stats: Default::default(),
 			state_sync: None,
 			warp_sync: None,
+			data_sync: None,
 			warp_sync_provider,
 			import_existing: false,
 		};
@@ -1274,6 +1288,55 @@ impl<B: BlockT> ChainSync<B> {
 				Ok(OnStateData::Request(who.clone(), request)),
 			state::ImportResult::BadResponse => {
 				debug!(target: "sync", "Bad state data received from {}", who);
+				Err(BadPeer(who.clone(), rep::BAD_BLOCK))
+			},
+		}
+	}
+
+	/// Handle a response from the remote to a data request that we made.
+	///
+	/// Returns next request if any.
+	pub fn on_transaction_data(
+		&mut self,
+		who: &PeerId,
+		response: DataResponse,
+	) -> Result<OnTransactionData<B>, BadPeer> {
+		let import_result = if let Some(sync) = &mut self.data_sync {
+			debug!(
+				target: "sync",
+				"Importing transaction data from {} with {} keys, {} proof nodes.",
+				who,
+				response.entries.len(),
+				response.proof.len(),
+			);
+			sync.import(response)
+		} else {
+			debug!(target: "sync", "Ignored obsolete data response from {}", who);
+			return Err(BadPeer(who.clone(), rep::NOT_REQUESTED))
+		};
+
+		match import_result {
+			data::ImportResult::Import(hash, header, state) => {
+				let origin = BlockOrigin::NetworkInitialSync;
+				let block = IncomingBlock {
+					hash,
+					header: Some(header),
+					body: None,
+					indexed_body: None,
+					justifications: None,
+					origin: None,
+					allow_missing_state: true,
+					import_existing: true,
+					skip_execution: self.skip_execution(),
+					state: Some(state),
+				};
+				debug!(target: "sync", "Data sync is complete. Import is queued");
+				Ok(OnTransactionData::Import(origin, block))
+			},
+			data::ImportResult::Continue(request) =>
+				Ok(OnTransactionData::Request(who.clone(), request)),
+			data::ImportResult::BadResponse => {
+				debug!(target: "sync", "Bad transaction data received from {}", who);
 				Err(BadPeer(who.clone(), rep::BAD_BLOCK))
 			},
 		}

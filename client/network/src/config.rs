@@ -139,6 +139,15 @@ pub struct Params<B: BlockT, H: ExHashT> {
 	/// both outgoing and incoming requests.
 	pub state_request_protocol_config: RequestResponseConfig,
 
+	/// Request response configuration for the state request protocol.
+	///
+	/// Can be constructed either via
+	/// [`crate::block_request_handler::generate_protocol_config`] allowing outgoing but not
+	/// incoming requests, or constructed via
+	/// [`crate::state_request_handler::StateRequestHandler::new`] allowing
+	/// both outgoing and incoming requests.
+	pub data_request_protocol_config: RequestResponseConfig,
+
 	/// Optional warp sync protocol support. Include protocol config and sync provider.
 	pub warp_sync: Option<(Arc<dyn WarpSyncProvider<B>>, RequestResponseConfig)>,
 }
