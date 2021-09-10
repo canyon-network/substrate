@@ -95,3 +95,21 @@ message StateEntry {
 	bytes value = 2;
 }
 
+// Request storage data from a peer.
+message DataRequest {
+	// Block header hash.
+	bytes block = 1;
+	// Start from this key. Equivalent to <empty bytes> if omitted.
+	bytes start = 2; // optional
+	// if 'true' indicates that response should contain raw key-values, rather than proof.
+	bool no_proof = 3;
+}
+
+message DataResponse {
+	// A collection of keys-values. Only populated if `no_proof` is `true`
+	repeated StateEntry entries = 1;
+	// If `no_proof` is false in request, this contains proof nodes.
+	bytes proof = 2;
+	// Set to true when there are no more keys to return.
+	bool complete = 3;
+}

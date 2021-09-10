@@ -352,6 +352,7 @@ impl<B: BlockT + 'static, H: ExHashT> NetworkWorker<B, H> {
 					params.block_request_protocol_config,
 					params.state_request_protocol_config,
 					warp_sync_protocol_config,
+					params.data_request_protocol_config,
 					bitswap,
 					params.light_client_request_protocol_config,
 					params.network_config.request_response_protocols,

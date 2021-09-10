@@ -21,7 +21,7 @@ use crate::{
 	config::{self, ProtocolId, WarpSyncProvider},
 	error,
 	request_responses::RequestFailure,
-	schema::v1::StateResponse,
+	schema::v1::{DataResponse, StateResponse},
 	utils::{interval, LruHashSet},
 	warp_request_handler::EncodedProof,
 };
@@ -198,6 +198,7 @@ enum PeerRequest<B: BlockT> {
 	Block(message::BlockRequest<B>),
 	State,
 	WarpProof,
+	Data,
 }
 
 /// Peer information
@@ -721,6 +722,26 @@ impl<B: BlockT> Protocol<B> {
 				CustomMessageOutcome::BlockImport(origin, vec![block]),
 			Ok(sync::OnStateData::Request(peer, req)) =>
 				prepare_state_request::<B>(&mut self.peers, peer, req),
+			Err(sync::BadPeer(id, repu)) => {
+				self.behaviour.disconnect_peer(&id, HARDCODED_PEERSETS_SYNC);
+				self.peerset_handle.report_peer(id, repu);
+				CustomMessageOutcome::None
+			},
+		}
+	}
+
+	/// Must be called in response to a [`CustomMessageOutcome::StateRequest`] being emitted.
+	/// Must contain the same `PeerId` and request that have been emitted.
+	pub fn on_data_response(
+		&mut self,
+		peer_id: PeerId,
+		response: DataResponse,
+	) -> CustomMessageOutcome<B> {
+		match self.sync.on_transaction_data(&peer_id, response) {
+			Ok(sync::OnTransactionData::Import(origin, block)) =>
+				CustomMessageOutcome::BlockImport(origin, vec![block]),
+			Ok(sync::OnTransactionData::Request(peer, req)) =>
+				prepare_data_request::<B>(&mut self.peers, peer, req),
 			Err(sync::BadPeer(id, repu)) => {
 				self.behaviour.disconnect_peer(&id, HARDCODED_PEERSETS_SYNC);
 				self.peerset_handle.report_peer(id, repu);
@@ -1273,6 +1294,19 @@ fn prepare_state_request<B: BlockT>(
 	CustomMessageOutcome::StateRequest { target: who, request, pending_response: tx }
 }
 
+fn prepare_data_request<B: BlockT>(
+	peers: &mut HashMap<PeerId, Peer<B>>,
+	who: PeerId,
+	request: crate::schema::v1::DataRequest,
+) -> CustomMessageOutcome<B> {
+	let (tx, rx) = oneshot::channel();
+
+	if let Some(ref mut peer) = peers.get_mut(&who) {
+		peer.request = Some((PeerRequest::State, rx));
+	}
+	CustomMessageOutcome::DataRequest { target: who, request, pending_response: tx }
+}
+
 fn prepare_warp_sync_request<B: BlockT>(
 	peers: &mut HashMap<PeerId, Peer<B>>,
 	who: PeerId,
@@ -1333,6 +1367,12 @@ pub enum CustomMessageOutcome<B: BlockT> {
 	WarpSyncRequest {
 		target: PeerId,
 		request: crate::warp_request_handler::Request<B>,
+		pending_response: oneshot::Sender<Result<Vec<u8>, RequestFailure>>,
+	},
+	/// A new data request must be emitted.
+	DataRequest {
+		target: PeerId,
+		request: crate::schema::v1::DataRequest,
 		pending_response: oneshot::Sender<Result<Vec<u8>, RequestFailure>>,
 	},
 	/// Peer has a reported a new head of chain.
@@ -1408,6 +1448,7 @@ impl<B: BlockT> NetworkBehaviour for Protocol<B> {
 		// Check for finished outgoing requests.
 		let mut finished_block_requests = Vec::new();
 		let mut finished_state_requests = Vec::new();
+		let mut finished_data_requests = Vec::new();
 		let mut finished_warp_sync_requests = Vec::new();
 		for (id, peer) in self.peers.iter_mut() {
 			if let Peer { request: Some((_, pending_response)), .. } = peer {
@@ -1457,6 +1498,28 @@ impl<B: BlockT> NetworkBehaviour for Protocol<B> {
 
 								finished_state_requests.push((id.clone(), protobuf_response));
 							},
+							PeerRequest::Data => {
+								let protobuf_response =
+									match crate::schema::v1::DataResponse::decode(&resp[..]) {
+										Ok(proto) => proto,
+										Err(e) => {
+											debug!(
+												target: "sync",
+												"Failed to decode data response from peer {:?}: {:?}.",
+												id,
+												e
+											);
+											self.peerset_handle
+												.report_peer(id.clone(), rep::BAD_MESSAGE);
+											self.behaviour
+												.disconnect_peer(id, HARDCODED_PEERSETS_SYNC);
+											continue
+										},
+									};
+
+								finished_data_requests.push((id.clone(), protobuf_response));
+							},
+
 							PeerRequest::WarpProof => {
 								finished_warp_sync_requests.push((id.clone(), resp));
 							},
@@ -1520,6 +1583,10 @@ impl<B: BlockT> NetworkBehaviour for Protocol<B> {
 		}
 		for (id, protobuf_response) in finished_state_requests {
 			let ev = self.on_state_response(id, protobuf_response);
+			self.pending_messages.push_back(ev);
+		}
+		for (id, protobuf_response) in finished_data_requests {
+			let ev = self.on_data_response(id, protobuf_response);
 			self.pending_messages.push_back(ev);
 		}
 		for (id, response) in finished_warp_sync_requests {
