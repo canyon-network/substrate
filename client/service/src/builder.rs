@@ -43,6 +43,7 @@ use sc_network::{
 	config::{OnDemand, Role, SyncMode},
 	light_client_requests::{self, handler::LightClientRequestHandler},
 	state_request_handler::{self, StateRequestHandler},
+	data_request_handler::{self, DataRequestHandler},
 	warp_request_handler::{self, RequestHandler as WarpSyncRequestHandler, WarpSyncProvider},
 	NetworkService,
 };
@@ -926,6 +927,23 @@ where
 		}
 	};
 
+	let data_request_protocol_config = {
+		if matches!(config.role, Role::Light) {
+			// Allow outgoing requests but deny incoming requests.
+			data_request_handler::generate_protocol_config(&protocol_id)
+		} else {
+			// Allow both outgoing and incoming requests.
+			let (handler, protocol_config) = DataRequestHandler::new(
+				&protocol_id,
+				client.clone(),
+				config.network.default_peers_set.in_peers as usize +
+					config.network.default_peers_set.out_peers as usize,
+			);
+			spawn_handle.spawn("data_request_handler", handler.run());
+			protocol_config
+		}
+	};
+
 	let warp_sync_params = warp_sync.map(|provider| {
 		let protocol_config = if matches!(config.role, Role::Light) {
 			// Allow outgoing requests but deny incoming requests.
@@ -977,6 +995,7 @@ where
 		metrics_registry: config.prometheus_config.as_ref().map(|config| config.registry.clone()),
 		block_request_protocol_config,
 		state_request_protocol_config,
+		data_request_protocol_config,
 		warp_sync: warp_sync_params,
 		light_client_request_protocol_config,
 	};

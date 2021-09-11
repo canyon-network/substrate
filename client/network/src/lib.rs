@@ -265,6 +265,7 @@ pub mod network_state;
 pub mod state_request_handler;
 pub mod transactions;
 pub mod warp_request_handler;
+pub mod data_request_handler;
 
 #[doc(inline)]
 pub use libp2p::{multiaddr, Multiaddr, PeerId};

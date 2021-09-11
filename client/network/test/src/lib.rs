@@ -53,6 +53,7 @@ use sc_network::{
 	},
 	light_client_requests::{self, handler::LightClientRequestHandler},
 	state_request_handler::{self, StateRequestHandler},
+	data_request_handler::{self, DataRequestHandler},
 	Multiaddr, NetworkService, NetworkWorker,
 };
 use sc_service::client::Client;
@@ -807,6 +808,13 @@ where
 			protocol_config
 		};
 
+		let data_request_protocol_config = {
+			let (handler, protocol_config) =
+				DataRequestHandler::new(&protocol_id, client.clone(), 50);
+			self.spawn_task(handler.run().boxed());
+			protocol_config
+		};
+
 		let light_client_request_protocol_config = {
 			let (handler, protocol_config) =
 				LightClientRequestHandler::new(&protocol_id, client.clone());
@@ -832,6 +840,7 @@ where
 			metrics_registry: None,
 			block_request_protocol_config,
 			state_request_protocol_config,
+			data_request_protocol_config,
 			light_client_request_protocol_config,
 			warp_sync: None,
 		})
@@ -902,6 +911,8 @@ where
 			block_request_handler::generate_protocol_config(&protocol_id);
 		let state_request_protocol_config =
 			state_request_handler::generate_protocol_config(&protocol_id);
+		let data_request_protocol_config =
+			data_request_handler::generate_protocol_config(&protocol_id);
 
 		let light_client_request_protocol_config =
 			light_client_requests::generate_protocol_config(&protocol_id);
@@ -922,6 +933,7 @@ where
 			metrics_registry: None,
 			block_request_protocol_config,
 			state_request_protocol_config,
+			data_request_protocol_config,
 			light_client_request_protocol_config,
 			warp_sync: None,
 		})
