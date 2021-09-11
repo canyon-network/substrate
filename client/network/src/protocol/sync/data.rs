@@ -16,19 +16,23 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use std::sync::Arc;
+
+use codec::{Decode, Encode};
+use log::debug;
+
+use sc_client_api::StorageProof;
+use sp_runtime::traits::{Block as BlockT, Header, NumberFor};
+
 use super::StateDownloadProgress;
 use crate::{
 	chain::{Client, ImportedState},
 	schema::v1::{StateEntry, DataRequest, DataResponse},
 };
-use codec::{Decode, Encode};
-use sc_client_api::StorageProof;
-use sp_runtime::traits::{Block as BlockT, Header, NumberFor};
-use std::sync::Arc;
 
-/// State sync support.
+/// Data sync support.
 
-/// State sync state machine. Accumulates partial state data until it
+/// Data sync state machine. Accumulates partial state data until it
 /// is ready to be imported.
 pub struct DataSync<B: BlockT> {
 	target_block: B::Hash,
@@ -43,6 +47,8 @@ pub struct DataSync<B: BlockT> {
 }
 
 /// Import state chunk result.
+///
+/// FIXME: => DataImportResult
 pub enum ImportResult<B: BlockT> {
 	/// State is complete and ready for import.
 	Import(B::Hash, B::Header, ImportedState<B>),
@@ -52,10 +58,12 @@ pub enum ImportResult<B: BlockT> {
 	BadResponse,
 }
 
+const LOG_TARGET: &str = "sync::data";
+
 impl<B: BlockT> DataSync<B> {
 	///  Create a new instance.
 	pub fn new(client: Arc<dyn Client<B>>, target: B::Header, skip_proof: bool) -> Self {
-		DataSync {
+		Self {
 			client,
 			target_block: target.hash(),
 			target_root: target.state_root().clone(),
@@ -71,38 +79,28 @@ impl<B: BlockT> DataSync<B> {
 	///  Validate and import a state reponse.
 	pub fn import(&mut self, response: DataResponse) -> ImportResult<B> {
 		if response.entries.is_empty() && response.proof.is_empty() && !response.complete {
-			log::debug!(
-				target: "sync",
-				"Bad state response",
-			);
+			debug!(target: LOG_TARGET, "Bad state response");
 			return ImportResult::BadResponse
 		}
 		if !self.skip_proof && response.proof.is_empty() {
-			log::debug!(
-				target: "sync",
-				"Missing proof",
-			);
+			debug!(target: LOG_TARGET, "Missing proof");
 			return ImportResult::BadResponse
 		}
 		let complete = if !self.skip_proof {
-			log::debug!(
-				target: "sync",
-				"Importing state from {} trie nodes",
-				response.proof.len(),
-			);
+			debug!(target: LOG_TARGET, "Importing data from {} trie nodes", response.proof.len());
 			let proof_size = response.proof.len() as u64;
 			let proof = match StorageProof::decode(&mut response.proof.as_ref()) {
 				Ok(proof) => proof,
 				Err(e) => {
-					log::debug!(target: "sync", "Error decoding proof: {:?}", e);
+					debug!(target: LOG_TARGET, "Error decoding proof: {:?}", e);
 					return ImportResult::BadResponse
 				},
 			};
 			let (values, complete) =
 				match self.client.verify_range_proof(self.target_root, proof, &self.last_key) {
 					Err(e) => {
-						log::debug!(
-							target: "sync",
+						debug!(
+							target: LOG_TARGET,
 							"DataResponse failed proof verification: {:?}",
 							e,
 						);
@@ -110,7 +108,7 @@ impl<B: BlockT> DataSync<B> {
 					},
 					Ok(values) => values,
 				};
-			log::debug!(target: "sync", "Imported with {} keys", values.len());
+			debug!(target: LOG_TARGET, "Imported with {} keys", values.len());
 
 			if let Some(last) = values.last().map(|(k, _)| k) {
 				self.last_key = last.clone();
@@ -123,8 +121,8 @@ impl<B: BlockT> DataSync<B> {
 			self.imported_bytes += proof_size;
 			complete
 		} else {
-			log::debug!(
-				target: "sync",
+			debug!(
+				target: LOG_TARGET,
 				"Importing state from {:?} to {:?}",
 				response.entries.last().map(|e| sp_core::hexdisplay::HexDisplay::from(&e.key)),
 				response.entries.first().map(|e| sp_core::hexdisplay::HexDisplay::from(&e.key)),

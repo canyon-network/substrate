@@ -129,10 +129,10 @@ impl<B: BlockT> DataRequestHandler<B> {
 			let IncomingRequest { peer, payload, pending_response } = request;
 
 			match self.handle_request(payload, pending_response, &peer) {
-				Ok(()) => debug!(target: LOG_TARGET, "Handled block request from {}.", peer),
+				Ok(()) => debug!(target: LOG_TARGET, "Handled data request from {}.", peer),
 				Err(e) => debug!(
 					target: LOG_TARGET,
-					"Failed to handle state request from {}: {}", peer, e,
+					"Failed to handle data request from {}: {}", peer, e,
 				),
 			}
 		}
