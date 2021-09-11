@@ -1009,6 +1009,28 @@ impl<B: BlockT> ChainSync<B> {
 		None
 	}
 
+	/// Get a data request, if any.
+	pub fn data_request(&mut self) -> Option<(PeerId, DataRequest)> {
+		if self.peers.iter().any(|(_, peer)| peer.state == PeerSyncState::DownloadingState) {
+			// Only one pending state request is allowed.
+			return None
+		}
+		if let Some(sync) = &self.data_sync {
+			if sync.is_complete() {
+				return None
+			}
+			for (id, peer) in self.peers.iter_mut() {
+				if peer.state.is_available() && peer.common_number >= sync.target_block_num() {
+					trace!(target: "sync", "New DataRequest for {}", id);
+					peer.state = PeerSyncState::DownloadingState;
+					let request = sync.next_request();
+					return Some((id.clone(), request))
+				}
+			}
+		}
+		None
+	}
+
 	/// Get a warp sync request, if any.
 	pub fn warp_sync_request(&mut self) -> Option<(PeerId, WarpProofRequest<B>)> {
 		if self

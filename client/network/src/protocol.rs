@@ -1302,7 +1302,7 @@ fn prepare_data_request<B: BlockT>(
 	let (tx, rx) = oneshot::channel();
 
 	if let Some(ref mut peer) = peers.get_mut(&who) {
-		peer.request = Some((PeerRequest::State, rx));
+		peer.request = Some((PeerRequest::Data, rx));
 	}
 	CustomMessageOutcome::DataRequest { target: who, request, pending_response: tx }
 }
@@ -1604,6 +1604,10 @@ impl<B: BlockT> NetworkBehaviour for Protocol<B> {
 		}
 		if let Some((id, request)) = self.sync.state_request() {
 			let event = prepare_state_request(&mut self.peers, id, request);
+			self.pending_messages.push_back(event);
+		}
+		if let Some((id, request)) = self.sync.data_request() {
+			let event = prepare_data_request(&mut self.peers, id, request);
 			self.pending_messages.push_back(event);
 		}
 		for (id, request) in self.sync.justification_requests() {
