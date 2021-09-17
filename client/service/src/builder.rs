@@ -840,6 +840,8 @@ pub struct BuildNetworkParams<'a, TBl: BlockT, TExPool, TImpQu, TCl> {
 		Option<Box<dyn FnOnce(Arc<TCl>) -> Box<dyn BlockAnnounceValidator<TBl> + Send> + Send>>,
 	/// An optional warp sync provider.
 	pub warp_sync: Option<Arc<dyn WarpSyncProvider<TBl>>>,
+	///
+	pub new_transaction_sender: futures::channel::mpsc::UnboundedSender<TBl::Extrinsic>
 }
 
 /// Build the network service, the network status sinks and an RPC sender.
@@ -876,6 +878,7 @@ where
 		on_demand,
 		block_announce_validator_builder,
 		warp_sync,
+		new_transaction_sender
 	} = params;
 
 	let transaction_pool_adapter = Arc::new(TransactionPoolAdapter {
@@ -979,6 +982,7 @@ where
 		state_request_protocol_config,
 		warp_sync: warp_sync_params,
 		light_client_request_protocol_config,
+		new_transaction_sender
 	};
 
 	// Storage chains don't keep full block history and can't be synced in full mode.

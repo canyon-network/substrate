@@ -141,6 +141,8 @@ pub struct Params<B: BlockT, H: ExHashT> {
 
 	/// Optional warp sync protocol support. Include protocol config and sync provider.
 	pub warp_sync: Option<(Arc<dyn WarpSyncProvider<B>>, RequestResponseConfig)>,
+
+	pub new_transaction_sender: futures::channel::mpsc::UnboundedSender<B::Extrinsic>,
 }
 
 /// Role of the local node.

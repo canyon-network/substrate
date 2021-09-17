@@ -170,6 +170,7 @@ impl TransactionsHandlerPrototype {
 		local_role: config::Role,
 		transaction_pool: Arc<dyn TransactionPool<H, B>>,
 		metrics_registry: Option<&Registry>,
+		new_transaction_sender: mpsc::UnboundedSender<B::Extrinsic>
 	) -> error::Result<(TransactionsHandler<B, H>, TransactionsHandlerController<H>)> {
 		let event_stream = service.event_stream("transactions-handler").boxed();
 		let (to_handler, from_controller) = mpsc::unbounded();
@@ -187,6 +188,7 @@ impl TransactionsHandlerPrototype {
 			transaction_pool,
 			local_role,
 			from_controller,
+			new_transaction_sender,
 			metrics: if let Some(r) = metrics_registry {
 				Some(Metrics::register(r)?)
 			} else {
@@ -256,6 +258,8 @@ pub struct TransactionsHandler<B: BlockT + 'static, H: ExHashT> {
 	gossip_enabled: Arc<AtomicBool>,
 	local_role: config::Role,
 	from_controller: mpsc::UnboundedReceiver<ToHandler<H>>,
+	/// Forward the new transaction from network.
+	new_transaction_sender: mpsc::UnboundedSender<B::Extrinsic>,
 	/// Prometheus metrics.
 	metrics: Option<Metrics>,
 }
@@ -406,9 +410,14 @@ impl<B: BlockT + 'static, H: ExHashT> TransactionsHandler<B, H> {
 				match self.pending_transactions_peers.entry(hash.clone()) {
 					Entry::Vacant(entry) => {
 						self.pending_transactions.push(PendingTransaction {
-							validation: self.transaction_pool.import(t),
+							validation: self.transaction_pool.import(t.clone()),
 							tx_hash: hash,
 						});
+						debug!(
+							target: "sync",
+							"Sending new transaction for data sync processing: {:?}", t.encode(),
+						);
+						let _ = self.new_transaction_sender.unbounded_send(t);
 						entry.insert(vec![who.clone()]);
 					},
 					Entry::Occupied(mut entry) => {

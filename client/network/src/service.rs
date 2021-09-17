@@ -436,6 +436,7 @@ impl<B: BlockT + 'static, H: ExHashT> NetworkWorker<B, H> {
 			params.role,
 			params.transaction_pool,
 			params.metrics_registry.as_ref(),
+			params.new_transaction_sender
 		)?;
 		(params.transactions_handler_executor)(tx_handler.run().boxed());
 
