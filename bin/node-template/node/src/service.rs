@@ -181,6 +181,19 @@ pub fn new_full(mut config: Configuration) -> Result<TaskManager, ServiceError> 
 		grandpa_link.shared_authority_set().clone(),
 	));
 
+	async fn on_new_transaction<E>(mut receiver: futures::channel::mpsc::UnboundedReceiver<E>) {
+		while let Some(new_transaction) = receiver.next().await {
+			println!("====================== new_transaction:");
+		}
+	}
+
+	let (new_transaction_sender, new_transaction_receiver) = futures::channel::mpsc::unbounded();
+	task_manager
+		.spawn_essential_handle()
+		.spawn_blocking("new-transaction-handler", async move {
+			on_new_transaction(new_transaction_receiver).await;
+		});
+
 	let (network, system_rpc_tx, network_starter) =
 		sc_service::build_network(sc_service::BuildNetworkParams {
 			config: &config,
@@ -191,6 +204,7 @@ pub fn new_full(mut config: Configuration) -> Result<TaskManager, ServiceError> 
 			on_demand: None,
 			block_announce_validator_builder: None,
 			warp_sync: Some(warp_sync),
+			new_transaction_sender
 		})?;
 
 	if config.offchain_worker.enabled {

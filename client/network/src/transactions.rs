@@ -413,6 +413,7 @@ impl<B: BlockT + 'static, H: ExHashT> TransactionsHandler<B, H> {
 							validation: self.transaction_pool.import(t.clone()),
 							tx_hash: hash,
 						});
+						println!("============================= sending new transaction via channel");
 						debug!(
 							target: "sync",
 							"Sending new transaction for data sync processing: {:?}", t.encode(),

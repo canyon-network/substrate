@@ -69,6 +69,13 @@ type ClientParts<T> = (
 	Arc<TFullBackend<<T as ChainInfo>::Block>>,
 );
 
+async fn on_new_transaction<E>(mut receiver: futures::channel::mpsc::UnboundedReceiver<E>) {
+	use futures::StreamExt;
+	while let Some(new_transaction) = receiver.next().await {
+		log::debug!("====================== new_transaction");
+	}
+}
+
 /// Provide the config or chain spec for a given chain
 pub enum ConfigOrChainSpec {
 	/// Configuration object
@@ -152,6 +159,13 @@ where
 		client.clone(),
 	);
 
+	let (new_transaction_sender, new_transaction_receiver) = futures::channel::mpsc::unbounded();
+	task_manager
+		.spawn_essential_handle()
+		.spawn_blocking("new-transaction-handler", async move {
+			on_new_transaction(new_transaction_receiver).await;
+		});
+
 	let (network, system_rpc_tx, network_starter) = {
 		let params = BuildNetworkParams {
 			config: &config,
@@ -162,6 +176,7 @@ where
 			on_demand: None,
 			block_announce_validator_builder: None,
 			warp_sync: None,
+			new_transaction_receiver,
 		};
 		build_network(params)?
 	};
