@@ -218,8 +218,8 @@ pub struct NewFullBase {
 	pub transaction_pool: Arc<sc_transaction_pool::FullPool<Block, FullClient>>,
 }
 
-async fn on_new_transaction<E: codec::Codec>(mut receiver: futures::channel::mpsc::UnboundedReceiver<E>) {
-	while let Some(new_transaction) = receiver.next().await {
+async fn on_new_transaction<E: codec::Codec>(mut receiver: futures::channel::mpsc::UnboundedReceiver<(sc_network::PeerId, E)>) {
+	while let Some((who, new_transaction)) = receiver.next().await {
 		println!("====================== new_transaction: {:?}", new_transaction.encode());
 		log::debug!("====================== new_transaction: {:?}", new_transaction.encode());
 	}

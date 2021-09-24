@@ -69,7 +69,8 @@ type ClientParts<T> = (
 	Arc<TFullBackend<<T as ChainInfo>::Block>>,
 );
 
-async fn on_new_transaction<E>(mut receiver: futures::channel::mpsc::UnboundedReceiver<E>) {
+async fn on_new_transaction<E>(mut receiver:
+	futures::channel::mpsc::UnboundedReceiver<(sc_network::PeerId, E)>) {
 	use futures::StreamExt;
 	while let Some(new_transaction) = receiver.next().await {
 		log::debug!("====================== new_transaction");
