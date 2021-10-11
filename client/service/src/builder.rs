@@ -840,8 +840,8 @@ pub struct BuildNetworkParams<'a, TBl: BlockT, TExPool, TImpQu, TCl> {
 		Option<Box<dyn FnOnce(Arc<TCl>) -> Box<dyn BlockAnnounceValidator<TBl> + Send> + Send>>,
 	/// An optional warp sync provider.
 	pub warp_sync: Option<Arc<dyn WarpSyncProvider<TBl>>>,
-	///
-	pub new_transaction_sender: futures::channel::mpsc::UnboundedSender<(sc_network::PeerId, TBl::Extrinsic)>
+	/// An optional new transaction sender.
+	pub new_transaction_sender: Option<futures::channel::mpsc::UnboundedSender<(sc_network::PeerId, TBl::Extrinsic)>>
 }
 
 /// Build the network service, the network status sinks and an RPC sender.
